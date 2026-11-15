@@ -59,31 +59,44 @@ export async function getAllAnakPanti(): Promise<AnakPantiItem[]> {
           tahun_lulus: true,
         },
       },
-      _count: {
-        select: { berkas_anak: true },
+      berkas_anak: {
+        select: {
+          jenis_berkas: true,
+        },
       },
     },
     orderBy: { id_anak: "desc" },
   });
 
-  return rows.map((row) => ({
-    id_anak: row.id_anak,
-    id_user: row.id_user,
-    username: row.users?.username ?? null,
-    nama_anak: row.nama_anak,
-    nik: row.nik,
-    tempat_lahir: row.tempat_lahir,
-    tanggal_lahir_iso: formatDateIso(row.tanggal_lahir),
-    tanggal_lahir_display: formatDateIndo(row.tanggal_lahir),
-    jenis_kelamin: String(row.jenis_kelamin),
-    status_anak: String(row.status_anak),
-    tanggal_masuk_iso: formatDateIso(row.tanggal_masuk),
-    tanggal_masuk_display: formatDateIndo(row.tanggal_masuk),
-    foto: row.foto,
-    is_alumni: Boolean(row.alumni),
-    tahun_lulus: row.alumni?.tahun_lulus ?? null,
-    berkas_count: row._count.berkas_anak,
-  }));
+  return rows.map((row) => {
+    const uploadedTypes = new Set(
+      row.berkas_anak.map((b) => String(b.jenis_berkas).toLowerCase()),
+    );
+
+    return {
+      id_anak: row.id_anak,
+      id_user: row.id_user,
+      username: row.users?.username ?? null,
+      nama_anak: row.nama_anak,
+      nik: row.nik,
+      tempat_lahir: row.tempat_lahir,
+      tanggal_lahir_iso: formatDateIso(row.tanggal_lahir),
+      tanggal_lahir_display: formatDateIndo(row.tanggal_lahir),
+      jenis_kelamin: String(row.jenis_kelamin),
+      status_anak: String(row.status_anak),
+      tanggal_masuk_iso: formatDateIso(row.tanggal_masuk),
+      tanggal_masuk_display: formatDateIndo(row.tanggal_masuk),
+      foto: row.foto,
+      is_alumni: Boolean(row.alumni),
+      tahun_lulus: row.alumni?.tahun_lulus ?? null,
+      berkas_count: row.berkas_anak.length,
+      kelengkapan_berkas: {
+        kk: uploadedTypes.has("kartu_keluarga"),
+        akta: uploadedTypes.has("akta"),
+        ijazah: uploadedTypes.has("ijazah"),
+      },
+    };
+  });
 }
 
 export async function createAnakPantiRecord(input: AnakPantiFormInput) {

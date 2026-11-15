@@ -11,11 +11,14 @@ export type Permission =
   | "anak_panti:update"
   | "anak_panti:delete"
   // Donatur & Transaksi Donasi
-  | "donatur:view"
-  | "donasi:view_all"
+  | "donasi:view"
   | "donasi:view_own"
   | "donasi:create"
+  | "donasi:create_own"
   | "donasi:verify"
+  | "donasi:delete"
+  | "donatur:view"
+  | "donatur:manage"
   // Keuangan & Inventaris Panti
   | "keuangan:view"
   | "keuangan:manage"
@@ -40,9 +43,12 @@ const ROLE_PERMISSIONS: Record<RoleName, Permission[]> = {
     "anak_panti:create",
     "anak_panti:update",
     "anak_panti:delete",
-    "donatur:view",
-    "donasi:view_all",
+    "donasi:view",
+    "donasi:create",
     "donasi:verify",
+    "donasi:delete",
+    "donatur:view",
+    "donatur:manage",
     "keuangan:view",
     "keuangan:manage",
     "inventaris:view",
@@ -58,9 +64,11 @@ const ROLE_PERMISSIONS: Record<RoleName, Permission[]> = {
     "anak_panti:view",
     "anak_panti:create",
     "anak_panti:update",
-    "donatur:view",
-    "donasi:view_all",
+    "donasi:view",
+    "donasi:create",
     "donasi:verify",
+    "donatur:view",
+    "donatur:manage",
     "keuangan:view",
     "keuangan:manage",
     "inventaris:view",
@@ -79,14 +87,14 @@ const ROLE_PERMISSIONS: Record<RoleName, Permission[]> = {
   ],
   "Donatur Tetap": [
     "donasi:view_own",
-    "donasi:create",
+    "donasi:create_own",
     "kegiatan:view",
     "berita:view",
     "profil:view_own",
   ],
   "Donatur Tidak Tetap": [
     "donasi:view_own",
-    "donasi:create",
+    "donasi:create_own",
     "kegiatan:view",
     "berita:view",
     "profil:view_own",
@@ -195,7 +203,7 @@ const ALL_DASHBOARD_MENUS: NavMenuItem[] = [
     label: "Kelola Donasi",
     href: "/dashboard/donasi",
     icon: "donasi",
-    permission: "donasi:view_all",
+    permission: "donasi:view",
   },
   {
     label: "Donasi Saya",

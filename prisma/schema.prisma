@@ -111,6 +111,7 @@ model users {
   anak_panti anak_panti?
   pengurus   pengurus?
   donatur    donatur?
+  transaksi_kas transaksi_kas[]
 }
 
 // ==========================================
@@ -278,18 +279,20 @@ model kategori_kas {
 
 model transaksi_kas {
   id_transaksi_kas  Int      @id @default(autoincrement())
+  id_pengurus       Int?
+  id_user           Int?
   id_kategori_kas   Int
   id_donasi_uang    Int?     @unique
-  id_pengurus       Int
-  tanggal_transaksi DateTime @default(now()) @db.DateTime(0)
+  tanggal_transaksi DateTime
   nominal           Decimal  @db.Decimal(12, 2)
   jenis_transaksi   JenisKas
   keterangan        String   @db.Text
   file_nota         String?  @db.VarChar(255)
 
+  pengurus     pengurus?    @relation(fields: [id_pengurus], references: [id_pengurus], onDelete: SetNull)
+  users        users?       @relation(fields: [id_user], references: [id_user], onDelete: SetNull)
   kategori_kas kategori_kas @relation(fields: [id_kategori_kas], references: [id_kategori_kas])
-  donasi_uang  donasi_uang? @relation(fields: [id_donasi_uang], references: [id_donasi_uang], onDelete: SetNull)
-  pengurus     pengurus     @relation(fields: [id_pengurus], references: [id_pengurus])
+  donasi_uang  donasi_uang? @relation(fields: [id_donasi_uang], references: [id_donasi_uang], onDelete: Cascade)
 }
 
 // ==========================================

@@ -1,8 +1,36 @@
 import bcrypt from "bcrypt";
 import crypto from "crypto";
+import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { DONATUR_ROLES, RoleName } from "../types/auth.types";
 import { RegisterDonaturInput } from "../schemas/auth.schema";
+
+export async function getCurrentUser() {
+  const session = await auth();
+  if (!session?.user) return null;
+
+  const user = session.user as {
+    id?: string;
+    id_user?: number | string;
+    username?: string;
+    email?: string | null;
+    name?: string | null;
+    role?: RoleName;
+  };
+
+  const resolvedUserId = Number(user.id_user ?? user.id);
+  if (!resolvedUserId || Number.isNaN(resolvedUserId) || !user.role) {
+    return null;
+  }
+
+  return {
+    id_user: resolvedUserId,
+    username: String(user.username || user.email || user.name || ""),
+    email: user.email ?? null,
+    name: String(user.name || user.username || ""),
+    role: user.role,
+  };
+}
 
 export async function verifyCredentialsUser(
   identifier: string,
