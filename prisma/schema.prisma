@@ -1,0 +1,364 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// ENUMS
+// ==========================================
+
+enum JenisKelamin {
+  L
+  P
+}
+
+enum StatusAnak {
+  Yatim
+  Piatu
+  Yatim_Piatu @map("Yatim Piatu")
+  Duafa
+}
+
+enum JenisBerkas {
+  ijazah
+  akta
+  kartu_keluarga
+  sertifikat
+  rapor
+  ktp
+  lainnya
+}
+
+enum TipeDonatur {
+  tetap
+  tidak_tetap
+  simpatisan
+}
+
+enum JenisDonasi {
+  uang
+  barang
+}
+
+enum StatusVerifikasi {
+  pending
+  terverifikasi
+  ditolak
+}
+
+enum MetodePembayaran {
+  transfer_bank
+  qris
+  tunai
+}
+
+enum KategoriBarangDonasi {
+  habis_pakai
+  inventaris
+}
+
+enum KondisiInventaris {
+  baik
+  rusak_ringan
+  rusak_berat
+}
+
+enum JenisKas {
+  pemasukan
+  pengeluaran
+}
+
+enum StatusKunjungan {
+  pending
+  disetujui
+  ditolak
+}
+
+enum StatusKebutuhan {
+  belum_terpenuhi
+  terpenuhi_sebagian
+  terpenuhi
+}
+
+// ==========================================
+// MODUL 1: AUTENTIKASI & HAK AKSES (RBAC)
+// ==========================================
+
+model roles {
+  id_role   Int     @id @default(autoincrement())
+  nama_role String  @unique @db.VarChar(50)
+  deskripsi String? @db.VarChar(255)
+
+  users users[]
+}
+
+model users {
+  id_user        Int       @id @default(autoincrement())
+  role_id        Int
+  username       String    @unique @db.VarChar(100)
+  email          String?   @unique @db.VarChar(100)
+  password       String?   @db.VarChar(255)
+  google_id      String?   @unique @db.VarChar(100)
+  otp_code       String?   @db.VarChar(6)
+  otp_expires_at DateTime? @db.DateTime(0)
+  created_at     DateTime  @default(now()) @db.Timestamp(0)
+
+  roles      roles       @relation(fields: [role_id], references: [id_role])
+  anak_panti anak_panti?
+  pengurus   pengurus?
+  donatur    donatur?
+}
+
+// ==========================================
+// MODUL 2: PENDATAAN INTERNAL PANTI
+// ==========================================
+
+model anak_panti {
+  id_anak       Int          @id @default(autoincrement())
+  id_user       Int?         @unique
+  nama_anak     String       @db.VarChar(100)
+  nik           String?      @db.VarChar(16)
+  tempat_lahir  String       @db.VarChar(50)
+  tanggal_lahir DateTime     @db.Date
+  jenis_kelamin JenisKelamin
+  status_anak   StatusAnak
+  tanggal_masuk DateTime     @db.Date
+  foto          String?      @db.VarChar(255)
+
+  users       users?        @relation(fields: [id_user], references: [id_user], onDelete: SetNull)
+  berkas_anak berkas_anak[]
+  alumni      alumni?
+}
+
+model berkas_anak {
+  id_berkas    Int         @id @default(autoincrement())
+  id_anak      Int
+  jenis_berkas JenisBerkas
+  nama_berkas  String      @db.VarChar(100)
+  file_path    String      @db.VarChar(255)
+  uploaded_at  DateTime    @default(now()) @db.Timestamp(0)
+
+  anak_panti anak_panti @relation(fields: [id_anak], references: [id_anak], onDelete: Cascade)
+}
+
+model alumni {
+  id_alumni          Int     @id @default(autoincrement())
+  id_anak            Int     @unique
+  tahun_lulus        Int     @db.Year
+  pekerjaan_sekarang String? @db.VarChar(100)
+  kontak             String? @db.VarChar(20)
+  alamat_sekarang    String? @db.Text
+
+  anak_panti anak_panti @relation(fields: [id_anak], references: [id_anak], onDelete: Cascade)
+}
+
+model pengurus {
+  id_pengurus   Int    @id @default(autoincrement())
+  id_user       Int    @unique
+  nama_pengurus String @db.VarChar(100)
+  jabatan       String @db.VarChar(50)
+  no_telepon    String @db.VarChar(20)
+  alamat        String @db.Text
+
+  users           users             @relation(fields: [id_user], references: [id_user], onDelete: Cascade)
+  logistik_keluar logistik_keluar[]
+  transaksi_kas   transaksi_kas[]
+  cms_kegiatan    cms_kegiatan[]
+}
+
+// ==========================================
+// MODUL 3: DONATUR & TRANSAKSI DONASI
+// ==========================================
+
+model donatur {
+  id_donatur       Int         @id @default(autoincrement())
+  id_user          Int?        @unique
+  nama_donatur     String      @db.VarChar(100)
+  email            String?     @db.VarChar(100)
+  no_telepon       String?     @db.VarChar(20)
+  alamat           String?     @db.Text
+  tipe_donatur     TipeDonatur @default(tidak_tetap)
+  frekuensi_donasi String?     @db.VarChar(50)
+
+  users  users?   @relation(fields: [id_user], references: [id_user], onDelete: SetNull)
+  donasi donasi[]
+}
+
+model donasi {
+  id_donasi         Int              @id @default(autoincrement())
+  id_donatur        Int?
+  kode_donasi       String           @unique @db.VarChar(30)
+  nama_pengirim     String           @db.VarChar(100)
+  tanggal_donasi    DateTime         @default(now()) @db.DateTime(0)
+  jenis_donasi      JenisDonasi
+  is_anonim         Boolean          @default(false)
+  status_verifikasi StatusVerifikasi @default(pending)
+  bukti_pembayaran  String?          @db.VarChar(255)
+  catatan           String?          @db.Text
+
+  donatur       donatur?       @relation(fields: [id_donatur], references: [id_donatur], onDelete: SetNull)
+  donasi_uang   donasi_uang?
+  donasi_barang donasi_barang?
+}
+
+model donasi_uang {
+  id_donasi_uang    Int              @id @default(autoincrement())
+  id_donasi         Int              @unique
+  nominal           Decimal          @db.Decimal(12, 2)
+  metode_pembayaran MetodePembayaran
+
+  donasi        donasi         @relation(fields: [id_donasi], references: [id_donasi], onDelete: Cascade)
+  transaksi_kas transaksi_kas?
+}
+
+model donasi_barang {
+  id_donasi_barang     Int                  @id @default(autoincrement())
+  id_donasi            Int                  @unique
+  nama_barang          String               @db.VarChar(100)
+  kategori_barang      KategoriBarangDonasi
+  jumlah               Int
+  satuan               String               @db.VarChar(20)
+  nomor_resi_ekspedisi String?              @db.VarChar(50)
+
+  donasi donasi @relation(fields: [id_donasi], references: [id_donasi], onDelete: Cascade)
+}
+
+// ==========================================
+// MODUL 4: MANAJEMEN LOGISTIK & INVENTARIS
+// ==========================================
+
+model logistik_habis_pakai {
+  id_logistik Int      @id @default(autoincrement())
+  nama_barang String   @db.VarChar(100)
+  kategori    String   @db.VarChar(50)
+  stok_jumlah Int      @default(0)
+  satuan      String   @db.VarChar(20)
+  updated_at  DateTime @updatedAt @db.Timestamp(0)
+
+  logistik_keluar logistik_keluar[]
+}
+
+model logistik_keluar {
+  id_logistik_keluar Int      @id @default(autoincrement())
+  id_logistik        Int
+  id_pengurus        Int
+  jumlah_keluar      Int
+  tanggal_keluar     DateTime @db.Date
+  peruntukan         String   @db.VarChar(255)
+
+  logistik_habis_pakai logistik_habis_pakai @relation(fields: [id_logistik], references: [id_logistik])
+  pengurus             pengurus             @relation(fields: [id_pengurus], references: [id_pengurus])
+}
+
+model inventaris_barang {
+  id_inventaris      Int               @id @default(autoincrement())
+  kode_inventaris    String            @unique @db.VarChar(50)
+  nama_barang        String            @db.VarChar(100)
+  jumlah             Int
+  kondisi            KondisiInventaris @default(baik)
+  lokasi_penyimpanan String            @db.VarChar(100)
+  tgl_perolehan      DateTime          @db.Date
+}
+
+// ==========================================
+// MODUL 5: KEUANGAN & PENCATATAN KAS PANTI
+// ==========================================
+
+model kategori_kas {
+  id_kategori_kas Int      @id @default(autoincrement())
+  nama_kategori   String   @db.VarChar(100)
+  jenis_kas       JenisKas
+
+  transaksi_kas transaksi_kas[]
+}
+
+model transaksi_kas {
+  id_transaksi_kas  Int      @id @default(autoincrement())
+  id_kategori_kas   Int
+  id_donasi_uang    Int?     @unique
+  id_pengurus       Int
+  tanggal_transaksi DateTime @default(now()) @db.DateTime(0)
+  nominal           Decimal  @db.Decimal(12, 2)
+  jenis_transaksi   JenisKas
+  keterangan        String   @db.Text
+  file_nota         String?  @db.VarChar(255)
+
+  kategori_kas kategori_kas @relation(fields: [id_kategori_kas], references: [id_kategori_kas])
+  donasi_uang  donasi_uang? @relation(fields: [id_donasi_uang], references: [id_donasi_uang], onDelete: SetNull)
+  pengurus     pengurus     @relation(fields: [id_pengurus], references: [id_pengurus])
+}
+
+// ==========================================
+// MODUL 6: LAYANAN PUBLIK & KUNJUNGAN
+// ==========================================
+
+model jadwal_kunjungan {
+  id_kunjungan        Int             @id @default(autoincrement())
+  kode_tiket          String          @unique @db.VarChar(30)
+  nama_pengunjung     String          @db.VarChar(100)
+  no_telepon          String          @db.VarChar(20)
+  instansi_organisasi String?         @db.VarChar(100)
+  tujuan_kunjungan    String          @db.Text
+  tanggal_rencana     DateTime        @db.Date
+  jam_rencana         DateTime        @db.Time(0)
+  jumlah_rombongan    Int
+  status_kunjungan    StatusKunjungan @default(pending)
+  catatan_pengurus    String?         @db.Text
+}
+
+// ==========================================
+// MODUL 7: CONTENT MANAGEMENT SYSTEM (CMS)
+// ==========================================
+
+model cms_profil_panti {
+  id_profil        Int     @id @default(autoincrement())
+  nama_panti       String  @db.VarChar(100)
+  sejarah          String  @db.Text
+  visi_misi        String  @db.Text
+  no_rekening_bank String  @db.VarChar(50)
+  qr_code_qris     String? @db.VarChar(255)
+  alamat           String  @db.Text
+  email_resmi      String  @db.VarChar(100)
+  no_wa_resmi      String  @db.VarChar(20)
+}
+
+model cms_struktur_organisasi {
+  id_struktur   Int     @id @default(autoincrement())
+  nama_pengurus String  @db.VarChar(100)
+  jabatan       String  @db.VarChar(50)
+  foto          String? @db.VarChar(255)
+  urutan        Int     @default(1)
+}
+
+model cms_kegiatan {
+  id_kegiatan         Int      @id @default(autoincrement())
+  id_pengurus         Int?
+  judul_kegiatan      String   @db.VarChar(200)
+  slug                String   @unique @db.VarChar(220)
+  isi_berita          String   @db.Text
+  foto_banner         String?  @db.VarChar(255)
+  tanggal_pelaksanaan DateTime @db.Date
+
+  pengurus pengurus? @relation(fields: [id_pengurus], references: [id_pengurus])
+}
+
+model cms_kebutuhan_panti {
+  id_kebutuhan     Int             @id @default(autoincrement())
+  nama_kebutuhan   String          @db.VarChar(100)
+  jenis_kebutuhan  JenisDonasi
+  target_jumlah    Int
+  jumlah_terkumpul Int             @default(0)
+  status           StatusKebutuhan @default(belum_terpenuhi)
+}
+
+model cms_legalitas {
+  id_legalitas  Int    @id @default(autoincrement())
+  nama_dokumen  String @db.VarChar(100)
+  nomor_dokumen String @db.VarChar(100)
+  penerbit      String @db.VarChar(100)
+  file_path     String @db.VarChar(255)
+}
