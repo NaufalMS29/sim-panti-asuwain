@@ -5,7 +5,7 @@ import {
   getAllDonatur,
   getTipeDonaturOptions,
 } from "@/features/donasi/services/donasi.service";
-import { DonaturClientPage } from "@/features/donasi/components/DonaturClientPage";
+import { DonaturClientPage } from "@/features/donasi/components";
 
 export default async function DataDonaturPage() {
   const user = await getCurrentUser();

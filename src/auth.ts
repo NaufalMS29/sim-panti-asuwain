@@ -6,6 +6,7 @@ import { authConfig } from "@/auth.config";
 import {
   syncGoogleDonaturUser,
   verifyCredentialsUser,
+  verifyOtpAutoLoginUser,
 } from "@/features/auth/services/auth.service";
 import { RoleName } from "@/features/auth/types/auth.types";
 
@@ -29,6 +30,40 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const user = await verifyCredentialsUser(
           String(credentials.identifier),
           String(credentials.password),
+        );
+        if (!user) return null;
+
+        return {
+          id: String(user.id_user),
+          name: user.name,
+          email: user.email,
+          id_user: user.id_user,
+          username: user.username,
+          role: user.role,
+        };
+      },
+    }),
+    Credentials({
+      id: "otp-auto-login",
+      name: "Auto Login OTP",
+      credentials: {
+        id_user: { label: "User ID", type: "text" },
+        expires: { label: "Expires", type: "text" },
+        signature: { label: "Signature", type: "text" },
+      },
+      async authorize(credentials) {
+        if (
+          !credentials?.id_user ||
+          !credentials?.expires ||
+          !credentials?.signature
+        ) {
+          return null;
+        }
+
+        const user = await verifyOtpAutoLoginUser(
+          String(credentials.id_user),
+          String(credentials.expires),
+          String(credentials.signature),
         );
         if (!user) return null;
 

@@ -47,5 +47,14 @@ export const updateUserSchema = z.object({
   role_id: z.coerce.number().int().positive("Role pengguna wajib dipilih."),
 });
 
+export const resetPasswordSchema = z.object({
+  new_password: z
+    .string()
+    .trim()
+    .min(6, "Password baru minimal 6 karakter.")
+    .max(100, "Password baru maksimal 100 karakter."),
+});
+
 export type CreateUserInput = z.infer<typeof createUserSchema>;
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;

@@ -5,7 +5,7 @@ import {
   getAllDonasiTransactions,
   getAllDonatur,
 } from "@/features/donasi/services/donasi.service";
-import { DonasiAdminClientPage } from "@/features/donasi/components/DonasiAdminClientPage";
+import { DonasiAdminClientPage } from "@/features/donasi/components";
 
 export default async function DonasiManagementPage() {
   const user = await getCurrentUser();

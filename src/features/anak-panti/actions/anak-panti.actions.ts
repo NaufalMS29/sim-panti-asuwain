@@ -11,6 +11,7 @@ import {
 import {
   createAnakPantiRecord,
   deleteAnakPantiRecord,
+  resetAnakPantiPasswordToDefault,
   updateAnakPantiRecord,
 } from "../services/anak-panti.service";
 import { AnakPantiActionResponse } from "../types/anak-panti.types";
@@ -121,6 +122,31 @@ export async function deleteAnakPantiAction(
         error instanceof Error
           ? error.message
           : "Gagal menghapus data anak panti.",
+    };
+  }
+}
+
+export async function resetAnakPantiPasswordAction(
+  id_anak: number,
+): Promise<AnakPantiActionResponse> {
+  try {
+    const role = await getCurrentRole();
+    assertPermission(role, "users:manage");
+
+    const result = await resetAnakPantiPasswordToDefault(id_anak);
+    revalidateAnakAllPaths(id_anak);
+
+    return {
+      success: true,
+      message: `Password akun "${result.username}" milik ${result.nama_anak} berhasil direset ke "${result.defaultPassword}".`,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "Gagal mereset password akun anak.",
     };
   }
 }

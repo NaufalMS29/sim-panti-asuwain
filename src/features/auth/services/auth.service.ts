@@ -2,8 +2,97 @@ import bcrypt from "bcrypt";
 import crypto from "crypto";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { DONATUR_ROLES, RoleName } from "../types/auth.types";
+import {
+  DONATUR_ROLES,
+  ROLE_DASHBOARD_MAP,
+  RoleName,
+} from "../types/auth.types";
 import { RegisterDonaturInput } from "../schemas/auth.schema";
+
+function getHmacSecret(): string {
+  return (
+    process.env.AUTH_SECRET ||
+    process.env.NEXTAUTH_SECRET ||
+    "sim-panti-otp-secret"
+  );
+}
+
+export function createOtpAutoLoginPayload(id_user: number) {
+  const expires = String(Date.now() + 60 * 1000); // Berlaku 60 detik
+  const signature = crypto
+    .createHmac("sha256", getHmacSecret())
+    .update(`${id_user}:${expires}`)
+    .digest("hex");
+
+  return {
+    id_user: String(id_user),
+    expires,
+    signature,
+  };
+}
+
+export async function verifyOtpAutoLoginUser(
+  idUserRaw: string,
+  expiresRaw: string,
+  signature: string,
+) {
+  const id_user = Number(idUserRaw);
+  const expires = Number(expiresRaw);
+
+  if (
+    !id_user ||
+    Number.isNaN(id_user) ||
+    !expires ||
+    Number.isNaN(expires) ||
+    Date.now() > expires
+  ) {
+    return null;
+  }
+
+  const expectedSignature = crypto
+    .createHmac("sha256", getHmacSecret())
+    .update(`${id_user}:${expires}`)
+    .digest("hex");
+
+  const expectedBuf = Buffer.from(expectedSignature, "hex");
+  const actualBuf = Buffer.from(signature, "hex");
+
+  if (
+    expectedBuf.length === 0 ||
+    expectedBuf.length !== actualBuf.length ||
+    !crypto.timingSafeEqual(expectedBuf, actualBuf)
+  ) {
+    return null;
+  }
+
+  const user = await prisma.users.findUnique({
+    where: { id_user },
+    include: {
+      roles: true,
+      pengurus: true,
+      anak_panti: true,
+      donatur: true,
+    },
+  });
+
+  if (!user || user.username.startsWith("pending_")) {
+    return null;
+  }
+
+  const displayName =
+    user.pengurus?.nama_pengurus ||
+    user.anak_panti?.nama_anak ||
+    user.donatur?.nama_donatur ||
+    user.username;
+
+  return {
+    id_user: user.id_user,
+    username: user.username,
+    email: user.email,
+    name: displayName,
+    role: user.roles.nama_role as RoleName,
+  };
+}
 
 export async function getCurrentUser() {
   const session = await auth();
@@ -202,6 +291,7 @@ export async function verifyRegistrationOtp(email: string, inputOtp: string) {
       email: normalizedEmail,
       username: { startsWith: "pending_" },
     },
+    include: { roles: true },
   });
 
   if (!user || !user.otp_code || !user.otp_expires_at) {
@@ -236,9 +326,14 @@ export async function verifyRegistrationOtp(email: string, inputOtp: string) {
     },
   });
 
+  const roleName = (user.roles.nama_role || "Donatur Tidak Tetap") as RoleName;
+  const redirectUrl = ROLE_DASHBOARD_MAP[roleName] || "/dashboard/donatur";
+
   return {
     success: true as const,
-    message: "Verifikasi email berhasil! Akun donatur Anda sudah aktif.",
+    message: "Verifikasi email berhasil! Mengalihkan ke dashboard...",
+    id_user: user.id_user,
+    redirectUrl,
   };
 }
 

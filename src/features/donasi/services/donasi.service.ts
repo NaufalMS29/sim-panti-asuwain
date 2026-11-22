@@ -39,7 +39,7 @@ function formatMetodeLabel(metode: string): string {
   }
 }
 
-async function resolveCashActorIds(
+async function resolveActorIds(
   tx: Prisma.TransactionClient,
   userId?: number | null,
 ): Promise<{ id_user: number | null; id_pengurus: number | null }> {
@@ -124,6 +124,200 @@ async function generateUniqueKodeDonasi(): Promise<string> {
   }
 }
 
+/**
+ * Menerapkan pencatatan otomatis ke `inventaris_barang` atau `logistik_habis_pakai` + `logistik_masuk`
+ * saat donasi barang berstatus `terverifikasi`.
+ */
+async function syncVerifiedDonasiBarang(
+  tx: Prisma.TransactionClient,
+  params: {
+    kode_donasi: string;
+    nama_pengirim: string;
+    is_anonim: boolean;
+    tanggal_donasi: Date;
+    barang: {
+      id_donasi_barang: number;
+      nama_barang: string;
+      kategori_barang: KategoriBarangDonasi;
+      jumlah: number;
+      satuan: string;
+    };
+    verifiedByUserId?: number | null;
+  },
+) {
+  const {
+    kode_donasi,
+    nama_pengirim,
+    is_anonim,
+    tanggal_donasi,
+    barang,
+    verifiedByUserId,
+  } = params;
+
+  const namaPublik = is_anonim ? "Hamba Allah (Anonim)" : nama_pengirim.trim();
+  const keteranganAuto = `Donasi (${kode_donasi}) dari ${namaPublik}`;
+
+  if (barang.kategori_barang === "inventaris") {
+    // Jika sebelumnya sempat tercatat sebagai habis_pakai, tarik dulu dampaknya
+    await rollbackDonasiBarangLogistikOnly(tx, barang.id_donasi_barang);
+
+    await tx.inventaris_barang.upsert({
+      where: { id_donasi_barang: barang.id_donasi_barang },
+      update: {
+        nama_barang: barang.nama_barang.trim(),
+        jumlah: barang.jumlah,
+        tgl_perolehan: tanggal_donasi,
+        keterangan: keteranganAuto,
+      },
+      create: {
+        id_donasi_barang: barang.id_donasi_barang,
+        kode_inventaris: `INV-${kode_donasi}`,
+        nama_barang: barang.nama_barang.trim(),
+        jumlah: barang.jumlah,
+        kondisi: "baik",
+        lokasi_penyimpanan: "Gudang Utama (Belum Ditempatkan)",
+        tgl_perolehan: tanggal_donasi,
+        keterangan: keteranganAuto,
+      },
+    });
+    return;
+  }
+
+  // Kategori: habis_pakai -> Hapus entri inventaris jika sebelumnya sempat kategori inventaris
+  await tx.inventaris_barang.deleteMany({
+    where: { id_donasi_barang: barang.id_donasi_barang },
+  });
+
+  const existingMasuk = await tx.logistik_masuk.findUnique({
+    where: { id_donasi_barang: barang.id_donasi_barang },
+    include: {
+      logistik_habis_pakai: true,
+    },
+  });
+
+  const { id_user, id_pengurus } = await resolveActorIds(tx, verifiedByUserId);
+
+  // Jika sudah pernah terverifikasi sebelumnya, cek apakah ada perubahan nama/satuan/jumlah
+  if (existingMasuk) {
+    const isSameItem =
+      existingMasuk.logistik_habis_pakai.nama_barang.trim().toLowerCase() ===
+        barang.nama_barang.trim().toLowerCase() &&
+      existingMasuk.logistik_habis_pakai.satuan.trim().toLowerCase() ===
+        barang.satuan.trim().toLowerCase();
+
+    if (isSameItem && existingMasuk.jumlah_masuk === barang.jumlah) {
+      await tx.logistik_masuk.update({
+        where: { id_logistik_masuk: existingMasuk.id_logistik_masuk },
+        data: {
+          tanggal_masuk: tanggal_donasi,
+          keterangan: keteranganAuto,
+          ...(id_user ? { id_user } : {}),
+          ...(id_pengurus ? { id_pengurus } : {}),
+        },
+      });
+      return;
+    }
+
+    // Jika item atau jumlah berubah pasca-verifikasi: rollback stok lama dengan validasi
+    await rollbackDonasiBarangLogistikOnly(tx, barang.id_donasi_barang);
+  }
+
+  // Cari master logistik yang cocok berdasarkan nama_barang & satuan (case-insensitive)
+  const allLogistik = await tx.logistik_habis_pakai.findMany();
+  const matchedLogistik = allLogistik.find(
+    (item) =>
+      item.nama_barang.trim().toLowerCase() ===
+        barang.nama_barang.trim().toLowerCase() &&
+      item.satuan.trim().toLowerCase() === barang.satuan.trim().toLowerCase(),
+  );
+
+  let targetLogistikId: number;
+  if (matchedLogistik) {
+    const updated = await tx.logistik_habis_pakai.update({
+      where: { id_logistik: matchedLogistik.id_logistik },
+      data: {
+        stok_jumlah: { increment: barang.jumlah },
+      },
+      select: { id_logistik: true },
+    });
+    targetLogistikId = updated.id_logistik;
+  } else {
+    const created = await tx.logistik_habis_pakai.create({
+      data: {
+        nama_barang: barang.nama_barang.trim(),
+        kategori: "Donasi / Umum",
+        stok_jumlah: barang.jumlah,
+        satuan: barang.satuan.trim(),
+      },
+      select: { id_logistik: true },
+    });
+    targetLogistikId = created.id_logistik;
+  }
+
+  await tx.logistik_masuk.create({
+    data: {
+      id_logistik: targetLogistikId,
+      id_donasi_barang: barang.id_donasi_barang,
+      id_user,
+      id_pengurus,
+      jumlah_masuk: barang.jumlah,
+      tanggal_masuk: tanggal_donasi,
+      keterangan: keteranganAuto,
+    },
+  });
+}
+
+async function rollbackDonasiBarangLogistikOnly(
+  tx: Prisma.TransactionClient,
+  id_donasi_barang: number,
+) {
+  const existingLogistikMasuk = await tx.logistik_masuk.findUnique({
+    where: { id_donasi_barang },
+    include: {
+      logistik_habis_pakai: {
+        select: {
+          id_logistik: true,
+          nama_barang: true,
+          stok_jumlah: true,
+          satuan: true,
+        },
+      },
+    },
+  });
+
+  if (!existingLogistikMasuk) return;
+
+  const { stok_jumlah, nama_barang, satuan } =
+    existingLogistikMasuk.logistik_habis_pakai;
+
+  if (stok_jumlah < existingLogistikMasuk.jumlah_masuk) {
+    throw new Error(
+      `Tidak dapat membatalkan/menghapus donasi karena stok "${nama_barang}" tersisa ${stok_jumlah} ${satuan} (lebih kecil dari jumlah donasi ${existingLogistikMasuk.jumlah_masuk} ${satuan}). Sesuaikan catatan logistik keluar terlebih dahulu.`,
+    );
+  }
+
+  await tx.logistik_habis_pakai.update({
+    where: { id_logistik: existingLogistikMasuk.id_logistik },
+    data: {
+      stok_jumlah: { decrement: existingLogistikMasuk.jumlah_masuk },
+    },
+  });
+
+  await tx.logistik_masuk.delete({
+    where: { id_logistik_masuk: existingLogistikMasuk.id_logistik_masuk },
+  });
+}
+
+async function rollbackDonasiBarangSync(
+  tx: Prisma.TransactionClient,
+  id_donasi_barang: number,
+) {
+  await tx.inventaris_barang.deleteMany({
+    where: { id_donasi_barang },
+  });
+  await rollbackDonasiBarangLogistikOnly(tx, id_donasi_barang);
+}
+
 function mapDonasiRow(row: {
   id_donasi: number;
   id_donatur: number | null;
@@ -155,14 +349,27 @@ function mapDonasiRow(row: {
     jumlah: number;
     satuan: string;
     nomor_resi_ekspedisi: string | null;
+    logistik_masuk?: {
+      pengurus: { nama_pengurus: string } | null;
+      users: {
+        username: string;
+        roles: { nama_role: string };
+      } | null;
+    } | null;
   } | null;
 }): DonasiTransactionItem {
   const kasVerifikator = row.donasi_uang?.transaksi_kas;
+  const logistikVerifikator = row.donasi_barang?.logistik_masuk;
+
   const verifikatorNama = kasVerifikator?.pengurus?.nama_pengurus
     ? kasVerifikator.pengurus.nama_pengurus
     : kasVerifikator?.users
       ? `${kasVerifikator.users.username} (${kasVerifikator.users.roles.nama_role})`
-      : null;
+      : logistikVerifikator?.pengurus?.nama_pengurus
+        ? logistikVerifikator.pengurus.nama_pengurus
+        : logistikVerifikator?.users
+          ? `${logistikVerifikator.users.username} (${logistikVerifikator.users.roles.nama_role})`
+          : null;
 
   return {
     id_donasi: row.id_donasi,
@@ -321,7 +528,21 @@ export async function getAllDonasiTransactions(): Promise<
           },
         },
       },
-      donasi_barang: true,
+      donasi_barang: {
+        include: {
+          logistik_masuk: {
+            select: {
+              pengurus: { select: { nama_pengurus: true } },
+              users: {
+                select: {
+                  username: true,
+                  roles: { select: { nama_role: true } },
+                },
+              },
+            },
+          },
+        },
+      },
     },
     orderBy: [{ tanggal_donasi: "desc" }, { id_donasi: "desc" }],
   });
@@ -440,7 +661,7 @@ export async function createDonasiUangTransaction(
 
     if (statusAwal === "terverifikasi" && createdDonasi.donasi_uang) {
       const [{ id_user, id_pengurus }, idKategoriKas] = await Promise.all([
-        resolveCashActorIds(tx, verifiedByUserId),
+        resolveActorIds(tx, verifiedByUserId),
         resolveDonasiKategoriKasId(tx),
       ]);
 
@@ -470,19 +691,21 @@ export async function createDonasiUangTransaction(
 export async function createDonasiBarangTransaction(
   input: DonasiBarangFormInput,
   buktiPembayaranPath: string | null,
+  verifiedByUserId?: number | null,
 ) {
   const kodeDonasi = await generateUniqueKodeDonasi();
   const statusAwal: StatusVerifikasi = input.auto_verify
     ? "terverifikasi"
     : "pending";
+  const tanggalDonasi = new Date(input.tanggal_donasi);
 
   await prisma.$transaction(async (tx) => {
-    await tx.donasi.create({
+    const createdDonasi = await tx.donasi.create({
       data: {
         id_donatur: input.id_donatur ?? null,
         kode_donasi: kodeDonasi,
         nama_pengirim: input.nama_pengirim.trim(),
-        tanggal_donasi: new Date(input.tanggal_donasi),
+        tanggal_donasi: tanggalDonasi,
         jenis_donasi: "barang",
         is_anonim: input.is_anonim,
         status_verifikasi: statusAwal,
@@ -498,7 +721,21 @@ export async function createDonasiBarangTransaction(
           },
         },
       },
+      include: {
+        donasi_barang: true,
+      },
     });
+
+    if (statusAwal === "terverifikasi" && createdDonasi.donasi_barang) {
+      await syncVerifiedDonasiBarang(tx, {
+        kode_donasi: createdDonasi.kode_donasi,
+        nama_pengirim: createdDonasi.nama_pengirim,
+        is_anonim: createdDonasi.is_anonim,
+        tanggal_donasi: createdDonasi.tanggal_donasi,
+        barang: createdDonasi.donasi_barang,
+        verifiedByUserId,
+      });
+    }
   });
 
   return kodeDonasi;
@@ -514,6 +751,7 @@ export async function verifyDonasiTransaction(
     where: { id_donasi },
     include: {
       donasi_uang: true,
+      donasi_barang: true,
     },
   });
 
@@ -539,10 +777,11 @@ export async function verifyDonasiTransaction(
       },
     });
 
+    // Sinkronisasi Donasi Uang -> Buku Kas
     if (existing.jenis_donasi === "uang" && existing.donasi_uang) {
       if (status === "terverifikasi") {
         const [{ id_user, id_pengurus }, idKategoriKas] = await Promise.all([
-          resolveCashActorIds(tx, verifiedByUserId),
+          resolveActorIds(tx, verifiedByUserId),
           resolveDonasiKategoriKasId(tx),
         ]);
 
@@ -586,13 +825,35 @@ export async function verifyDonasiTransaction(
         });
       }
     }
+
+    // Sinkronisasi Donasi Barang -> Inventaris & Logistik Habis Pakai
+    if (existing.jenis_donasi === "barang" && existing.donasi_barang) {
+      if (status === "terverifikasi") {
+        await syncVerifiedDonasiBarang(tx, {
+          kode_donasi: existing.kode_donasi,
+          nama_pengirim: existing.nama_pengirim,
+          is_anonim: existing.is_anonim,
+          tanggal_donasi: existing.tanggal_donasi,
+          barang: existing.donasi_barang,
+          verifiedByUserId,
+        });
+      } else if (status === "ditolak") {
+        await rollbackDonasiBarangSync(
+          tx,
+          existing.donasi_barang.id_donasi_barang,
+        );
+      }
+    }
   });
 }
 
 export async function deleteDonasiTransaction(id_donasi: number) {
   const existing = await prisma.donasi.findUnique({
     where: { id_donasi },
-    include: { donasi_uang: { select: { id_donasi_uang: true } } },
+    include: {
+      donasi_uang: { select: { id_donasi_uang: true } },
+      donasi_barang: { select: { id_donasi_barang: true } },
+    },
   });
 
   if (!existing) {
@@ -604,6 +865,12 @@ export async function deleteDonasiTransaction(id_donasi: number) {
       await tx.transaksi_kas.deleteMany({
         where: { id_donasi_uang: existing.donasi_uang.id_donasi_uang },
       });
+    }
+    if (existing.donasi_barang) {
+      await rollbackDonasiBarangSync(
+        tx,
+        existing.donasi_barang.id_donasi_barang,
+      );
     }
     await tx.donasi.delete({ where: { id_donasi } });
   });

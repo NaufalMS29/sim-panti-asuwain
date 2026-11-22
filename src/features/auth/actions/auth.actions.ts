@@ -14,6 +14,7 @@ import {
   ResetPasswordInput,
 } from "../schemas/auth.schema";
 import {
+  createOtpAutoLoginPayload,
   registerDonaturWithOtp,
   verifyRegistrationOtp,
   regenerateRegistrationOtp,
@@ -134,7 +135,37 @@ export async function verifyRegisterOtpAction(
     };
   }
 
-  return verifyRegistrationOtp(parsed.data.email, parsed.data.otp);
+  const verifyResult = await verifyRegistrationOtp(
+    parsed.data.email,
+    parsed.data.otp,
+  );
+  if (!verifyResult.success) {
+    return {
+      success: false,
+      message: verifyResult.message,
+    };
+  }
+
+  try {
+    const autoLoginPayload = createOtpAutoLoginPayload(verifyResult.id_user);
+    await signIn("otp-auto-login", {
+      ...autoLoginPayload,
+      redirect: false,
+    });
+
+    return {
+      success: true,
+      message: verifyResult.message,
+      redirectUrl: verifyResult.redirectUrl,
+    };
+  } catch {
+    return {
+      success: true,
+      message:
+        "Verifikasi email berhasil! Silakan masuk menggunakan akun Anda.",
+      redirectUrl: "/login",
+    };
+  }
 }
 
 export async function resendRegisterOtpAction(

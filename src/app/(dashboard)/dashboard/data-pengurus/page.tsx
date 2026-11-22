@@ -7,13 +7,17 @@ import { PengurusClientPage } from "@/features/pengurus/components/PengurusClien
 
 export default async function DataPengurusPage() {
   const session = await auth();
-  const role = (session?.user as { role?: RoleName } | undefined)?.role;
+  const user = session?.user as { role?: RoleName } | undefined;
 
-  if (!role || !can(role, "pengurus:view")) {
-    redirect("/dashboard");
-  }
+  if (!user) redirect("/login");
+  if (!can(user.role, "pengurus:manage")) redirect("/dashboard");
 
   const pengurusList = await getAllPengurus();
 
-  return <PengurusClientPage initialData={pengurusList} currentRole={role} />;
+  return (
+    <PengurusClientPage
+      initialPengurus={pengurusList}
+      canResetPassword={can(user.role, "users:manage")}
+    />
+  );
 }

@@ -112,6 +112,8 @@ model users {
   pengurus   pengurus?
   donatur    donatur?
   transaksi_kas transaksi_kas[]
+  logistik_masuk logistik_masuk[]
+  logistik_keluar logistik_keluar[]
 }
 
 // ==========================================
@@ -166,6 +168,7 @@ model pengurus {
   alamat        String @db.Text
 
   users           users             @relation(fields: [id_user], references: [id_user], onDelete: Cascade)
+  logistik_masuk  logistik_masuk[]
   logistik_keluar logistik_keluar[]
   transaksi_kas   transaksi_kas[]
   cms_kegiatan    cms_kegiatan[]
@@ -225,7 +228,9 @@ model donasi_barang {
   satuan               String               @db.VarChar(20)
   nomor_resi_ekspedisi String?              @db.VarChar(50)
 
-  donasi donasi @relation(fields: [id_donasi], references: [id_donasi], onDelete: Cascade)
+  donasi            donasi             @relation(fields: [id_donasi], references: [id_donasi], onDelete: Cascade)
+  inventaris_barang inventaris_barang?
+  logistik_masuk    logistik_masuk?
 }
 
 // ==========================================
@@ -240,29 +245,52 @@ model logistik_habis_pakai {
   satuan      String   @db.VarChar(20)
   updated_at  DateTime @updatedAt @db.Timestamp(0)
 
+  logistik_masuk  logistik_masuk[]
   logistik_keluar logistik_keluar[]
+}
+
+model logistik_masuk {
+  id_logistik_masuk Int      @id @default(autoincrement())
+  id_logistik       Int
+  id_donasi_barang  Int?     @unique
+  id_pengurus       Int?
+  id_user           Int?
+  jumlah_masuk      Int
+  tanggal_masuk     DateTime @db.Date
+  keterangan        String   @db.VarChar(255)
+
+  logistik_habis_pakai logistik_habis_pakai @relation(fields: [id_logistik], references: [id_logistik])
+  donasi_barang        donasi_barang?       @relation(fields: [id_donasi_barang], references: [id_donasi_barang], onDelete: Cascade)
+  pengurus             pengurus?            @relation(fields: [id_pengurus], references: [id_pengurus], onDelete: SetNull)
+  users                users?               @relation(fields: [id_user], references: [id_user], onDelete: SetNull)
 }
 
 model logistik_keluar {
   id_logistik_keluar Int      @id @default(autoincrement())
   id_logistik        Int
-  id_pengurus        Int
+  id_pengurus        Int?
+  id_user            Int?
   jumlah_keluar      Int
   tanggal_keluar     DateTime @db.Date
   peruntukan         String   @db.VarChar(255)
 
   logistik_habis_pakai logistik_habis_pakai @relation(fields: [id_logistik], references: [id_logistik])
-  pengurus             pengurus             @relation(fields: [id_pengurus], references: [id_pengurus])
+  pengurus             pengurus?            @relation(fields: [id_pengurus], references: [id_pengurus], onDelete: SetNull)
+  users                users?               @relation(fields: [id_user], references: [id_user], onDelete: SetNull)
 }
 
 model inventaris_barang {
   id_inventaris      Int               @id @default(autoincrement())
+  id_donasi_barang   Int?              @unique
   kode_inventaris    String            @unique @db.VarChar(50)
   nama_barang        String            @db.VarChar(100)
   jumlah             Int
   kondisi            KondisiInventaris @default(baik)
   lokasi_penyimpanan String            @db.VarChar(100)
   tgl_perolehan      DateTime          @db.Date
+  keterangan         String?           @db.Text
+
+  donasi_barang donasi_barang? @relation(fields: [id_donasi_barang], references: [id_donasi_barang], onDelete: Cascade)
 }
 
 // ==========================================
@@ -303,6 +331,7 @@ model jadwal_kunjungan {
   id_kunjungan        Int             @id @default(autoincrement())
   kode_tiket          String          @unique @db.VarChar(30)
   nama_pengunjung     String          @db.VarChar(100)
+  email_pengunjung    String?         @db.VarChar(100)
   no_telepon          String          @db.VarChar(20)
   instansi_organisasi String?         @db.VarChar(100)
   tujuan_kunjungan    String          @db.Text

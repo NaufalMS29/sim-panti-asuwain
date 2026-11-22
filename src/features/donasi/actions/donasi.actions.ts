@@ -66,6 +66,7 @@ function revalidateDonasiPaths() {
   revalidatePath("/dashboard/donasi-saya");
   revalidatePath("/dashboard/data-donatur");
   revalidatePath("/dashboard/keuangan");
+  revalidatePath("/dashboard/inventaris");
   revalidatePath("/dashboard");
 }
 
@@ -380,6 +381,7 @@ export async function submitDonasiBarangAction(
     const kodeDonasi = await createDonasiBarangTransaction(
       parsed.data,
       buktiPath,
+      autoVerify ? user.id_user : null,
     );
     revalidateDonasiPaths();
 

@@ -238,3 +238,35 @@ export async function deleteAnakPantiRecord(id_anak: number) {
 
   return existing.nama_anak;
 }
+
+export async function resetAnakPantiPasswordToDefault(id_anak: number) {
+  const existing = await prisma.anak_panti.findUnique({
+    where: { id_anak },
+    include: {
+      users: {
+        select: { id_user: true, username: true },
+      },
+    },
+  });
+
+  if (!existing) {
+    throw new Error("Data anak panti tidak ditemukan.");
+  }
+
+  if (!existing.id_user || !existing.users) {
+    throw new Error("Data anak ini belum memiliki akun login portal.");
+  }
+
+  const hashedPassword = await bcrypt.hash(DEFAULT_ANAK_PASSWORD, 10);
+
+  await prisma.users.update({
+    where: { id_user: existing.id_user },
+    data: { password: hashedPassword },
+  });
+
+  return {
+    nama_anak: existing.nama_anak,
+    username: existing.users.username,
+    defaultPassword: DEFAULT_ANAK_PASSWORD,
+  };
+}
