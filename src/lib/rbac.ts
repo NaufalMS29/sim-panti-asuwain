@@ -24,11 +24,13 @@ export type Permission =
   | "keuangan:manage"
   | "inventaris:view"
   | "inventaris:manage"
-  // Kegiatan & Berita
+  // Kegiatan, Berita & Kunjungan
   | "kegiatan:view"
   | "kegiatan:manage"
   | "berita:view"
   | "berita:manage"
+  | "kunjungan:view"
+  | "kunjungan:manage"
   // Profil Pribadi
   | "profil:view_own"
   // Berkas Anak Panti
@@ -53,6 +55,8 @@ const ROLE_PERMISSIONS: Record<RoleName, Permission[]> = {
     "keuangan:manage",
     "inventaris:view",
     "inventaris:manage",
+    "kunjungan:view",
+    "kunjungan:manage",
     "kegiatan:view",
     "kegiatan:manage",
     "berita:view",
@@ -73,6 +77,8 @@ const ROLE_PERMISSIONS: Record<RoleName, Permission[]> = {
     "keuangan:manage",
     "inventaris:view",
     "inventaris:manage",
+    "kunjungan:view",
+    "kunjungan:manage",
     "kegiatan:view",
     "kegiatan:manage",
     "berita:view",
@@ -222,6 +228,12 @@ const ALL_DASHBOARD_MENUS: NavMenuItem[] = [
     href: "/dashboard/inventaris",
     icon: "inventaris",
     permission: "inventaris:view",
+  },
+  {
+    label: "Jadwal Kunjungan",
+    href: "/dashboard/jadwal-kunjungan",
+    icon: "kegiatan",
+    permission: "kunjungan:view",
   },
   {
     label: "Jadwal Kegiatan",
