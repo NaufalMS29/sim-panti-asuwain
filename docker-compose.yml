@@ -1,0 +1,20 @@
+services:
+  web:
+    container_name: sim-panti-asuwain-web
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      AUTH_TRUST_HOST: "true"
+      AUTH_URL: "http://localhost:3000"
+      DATABASE_URL: "mysql://root:@host.docker.internal:3306/db_panti_asuwain"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./public/uploads:/app/public/uploads
